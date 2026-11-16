@@ -1,0 +1,22 @@
+# no photos, no models, no ledgers, no logs, no personal config
+__pycache__/
+.pytest_cache/
+.DS_Store
+launchd/generated/
+runs/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.jsonl.gz
+*.log
+*.onnx
+*.jpg
+*.jpeg
+*.JPG
+*.png
+*.heic
+*.HEIC
+*.pem
+.env*
+config.yaml
+config.local.yaml

@@ -1,0 +1,126 @@
+# Face Curator config (no secrets). `facecurator init` copies this to ~/.config/face-curator/config.yaml
+# (FACECURATOR_CONFIG overrides the path). Concepts: docs/design.md. Why the defaults are what they are:
+# docs/lessons.md. Every name and date below is an example.
+space: team                                    # Synology Shared Space (personal = the account's own space)
+
+# The synology-photos skill's CLI (version 0.1.0 or later). This file is loaded and run as Python code, with
+# your NAS session: point it only at a copy of that skill you trust.
+synology_photos: ~/.claude/skills/synology-photos/scripts/synophotos.py
+
+# Where the ledger, the cached previews, face crops, face embeddings, exports and reports live. They are
+# biometric and personal data: keep both folders on this Mac's own disk, readable by you only. Do not put them
+# in a synced or shared folder (iCloud Drive, Dropbox, a shared volume) or on an external disk that ignores
+# ownership. Folders the curator creates are private (0700); a folder you created keeps your permissions.
+data_dir: ~/Library/Application Support/face-curator
+backup_dir: null                               # default <data_dir>/backups; the same warning applies
+
+# Optional: a photo-picker library folder that already holds buffalo_l faces (cache/ingest_index.jsonl and
+# cache/faces/faces.jsonl), for `import-face-cache`. See references/ledger-schema.md.
+# face_cache_dir: ~/PhotoLib
+
+# --- Who the curator looks after -------------------------------------------------------------------------
+# `name` must match the person's name in Synology Photos exactly. Keys are short ids of your choice.
+#
+# Close circle: the people you will label yourself in the review page (about 20-50 faces each to start, more
+# for children: per age bin). Only they appear on review cards, studies and blind checks, and their changes go
+# first. Children need `born` (YYYY-MM-DD; use the 15th if you only know the month): faces are compared within
+# age bins, and no face is ever assigned before a birth or after `died` (YYYY or YYYY-MM).
+# `facecurator people --yaml` (after the first sync) prints your most-tagged Synology people ready to paste.
+close_circle:
+  alice:   {name: Alice Example, born: 2016-03-10}
+  bella:   {name: Bella Example, born: 2018-09-20}
+  parent1: {name: Sam Example}
+  parent2: {name: Alex Example}
+
+# Outer circle: other people the curator should look after, with no labelling from you. Their galleries come
+# from Synology's own tags, filtered (assign.outer_* below), and they need a stricter score
+# (assign.outer_floor_bump). An outer person never takes a face from a close-circle person, and outer-circle
+# changes are never written by an automatic run: you apply them yourself after the preview.
+outer_circle:
+  from_synology: false     # true: EVERY Synology-named person with at least min_faces tagged faces joins the
+                           # outer circle after each sync, so the curator plans edits and merges for all of
+                           # them from Synology's own tags. Leave it false until you have read a few plans.
+  min_faces: 20
+  exclude: []              # with from_synology: these Synology names stay out (test people, pets, groups)
+  people:                  # listed explicitly; dates (born / died) are optional
+    grandpa: {name: Grandpa Example, died: 2012-05}
+
+# Look-alike groups. siblings: a larger score margin is required between them (assign.default_sibling_margin)
+# and each pair gets its own blind checks. lookalikes: other groups that get confused (cousins, twins of
+# friends); they get extra blind checks but the normal margin.
+siblings: [[alice, bella]]
+lookalikes: []
+
+# --- Writing to the NAS ------------------------------------------------------------------------------------
+# staged (the default): a run only plans. You read the preview (`apply --run ID`) and write with `--yes`.
+# auto: once EARNED, the scheduled run writes face edits and small merges to the NAS unattended, with nobody
+# looking at a preview. Earned means all of: this line says auto; auto mode is not demoted; at least 3 earlier
+# runs are done and had changes written; the latest one-off audit (`audit --run ID`) has no open card, at least
+# 200 judged answers and no error; each of the last 2 done runs has at least 20 judged cards and no error; this
+# run's calibration has a lower 95% bound of at least 0.99. A verify mismatch or a card that finds a wrong
+# accepted decision demotes it until a new one-off audit is completed without an error. An automatic run
+# writes at most 500 face edits and 5 merges, never an outer-circle change, never a merge above
+# caps.merge_auto_max_faces; the rest waits for you. The numbers below can make this stricter; the code does
+# not let a config make it looser (minimum 3, 2, 200, 20 and 0.98; maximum 500 and 5). `facecurator status`
+# says whether auto mode is earned and why not.
+mode:
+  policy: staged
+  # staged_runs_before_auto: 3
+  # clean_audits_for_auto: 2
+  # audit_min_judged: 200
+  # min_judged_per_run: 20       # the default cards give 20 a run: every one must be answered (not skipped)
+  # min_lower95: 0.99
+  # auto_max_face_edits: 500
+  # auto_max_merges: 5
+
+# Per run, in any mode. The code caps these at 10000 face edits, 50 merges and 200 faces. A merge above
+# merge_auto_max_faces is listed separately in the plan and is never written by an automatic run.
+caps: {face_edits: 3000, merges: 20, merge_auto_max_faces: 200}
+
+# --- Tuning (the values shown are the defaults in scripts/fc/config.py; change only with evidence) --------
+age_bins_months: [0, 6, 12, 24, 48, 72, 96]    # 0-6m, 6-12m, 12-24m, 2-4y, 4-6y, 6-8y, 8y+
+bin_overlap_months: 2                          # 6 was better on the reference library (holdout-tested)
+gallery: {target: 30, max: 50, min_active: 8, batch: 24}
+models: {reference: buffalo_l, challenger: null}
+cluster: {distance: 0.34, schedule: [25, 10, 5, 3]}
+cards: {random: 8, sibling_margin: 6, disagreement: 3, bridge: 3, max_waiting: 40}
+
+# detect:
+#   min_det: 0.6                 # detector score below which a new face is ignored
+#   min_face_height: 0.04        # as a fraction of the image height
+#   max_side: 1600               # longest side of the image given to the detector
+# assign:
+#   precision_target: 0.995
+#   default_floor: 0.5           # score needed to accept; calibration can only raise it
+#   min_floor: 0.5
+#   baby_floor: 0.65             # for faces of children under baby_months
+#   baby_months: 12
+#   default_margin: 0.08         # distance to the runner-up
+#   default_sibling_margin: 0.12 # ... when the runner-up is a sibling
+#   no_date_floor_bump: 0.05     # photos without a capture date
+#   outer_consistency: 0.55      # an outer gallery uses a Synology tag only if it agrees with the person's others
+#   outer_close_gap: 0.05        # ... and is this much further from every close-circle gallery
+#   outer_max: 200
+#   outer_min: 8                 # fewer usable tags: no gallery, the person is left alone
+#   outer_floor_bump: 0.05       # outer circle accepts from 0.55
+#   safety_bump: 0.02
+#   error_bump: 0.03             # added to a person's age bin after a wrong accepted decision
+#   min_calibration_accepts: 30
+#   reject_floor: 0.3
+#   impostor_sample: 5000
+# changes:
+#   group_merge_min_accepted: 0.95   # share of an unnamed group's faces accepted for one person before a merge
+#   group_min_faces: 3
+#   add_missed_faces: false          # link faces Synology did not detect; enable only after clean audits
+#   min_det_add: 0.75
+#   min_height_add: 0.06
+# sync:
+#   rolling_fraction: 12         # re-read 1/12 of the library's faces every run
+# runner:                        # the scheduled run (`run --scheduled`) exits quietly unless these hold
+#   require_ac: true             # the Mac is on AC power
+#   require_lan: true            # the NAS answers on the LAN. This needs lan_host set in the synology-photos
+#                                # config; without it every scheduled try ends with "NAS not reachable on the
+#                                # LAN". Set lan_host there, or require_lan: false here.
+#   index_wait_minutes: 30       # wait for the Photos indexer before verifying writes
+# review:
+#   port: 8765                   # the review page listens on 127.0.0.1 only
